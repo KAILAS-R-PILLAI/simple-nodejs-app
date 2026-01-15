@@ -15,5 +15,5 @@ COPY . .
 EXPOSE 3000
 
 # 5. Correct command (JSON form)
-CMD ["node", "start"]
+CMD ["npm", "start"]
 
