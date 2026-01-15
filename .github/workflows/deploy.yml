@@ -3,7 +3,7 @@ name: Deploy Node.js App to ECS
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   deploy:
