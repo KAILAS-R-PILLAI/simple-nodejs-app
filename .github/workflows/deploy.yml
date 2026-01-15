@@ -1,1 +1,53 @@
+name: Deploy Node.js App to ECS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG=${GITHUB_SHA::8}
+        docker build -t ${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG .
+        docker tag ${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG
+
+    - name: Push Docker image to ECR
+      run: |
+        IMAGE_TAG=${GITHUB_SHA::8}
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG
+
+    - name: Update ECS Service
+      run: |
+        IMAGE_TAG=${GITHUB_SHA::8}
+        TASK_DEF=$(aws ecs describe-task-definition --task-definition ${{ secrets.SERVICE_NAME }})
+        FAMILY=$(echo $TASK_DEF | jq -r '.taskDefinition.family')
+        CONTAINER=$(echo $TASK_DEF | jq -r '.taskDefinition.containerDefinitions[0].name')
+
+        aws ecs register-task-definition \
+          --family $FAMILY \
+          --container-definitions "$(echo $TASK_DEF | jq --arg IMAGE "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:$IMAGE_TAG" '.taskDefinition.containerDefinitions[0].image=$IMAGE')"
+
+        aws ecs update-service \
+          --cluster ${{ secrets.CLUSTER_NAME }} \
+          --service ${{ secrets.SERVICE_NAME }} \
+          --force-new-deployment
 
